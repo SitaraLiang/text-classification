@@ -1,3 +1,18 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+import unicodedata
+import codecs
+import re
+import os.path
+import string
+#import nltk
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords
+#nltk.download('stopwords')
+from sklearn.feature_extraction.text import CountVectorizer
+
 def keep_only_part(txt_list, number):
     #A utiliser AVANT remove_ponctuation() sinon on peut pas reconnaitre les lignes
 
