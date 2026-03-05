@@ -113,17 +113,8 @@ def train_one(X_train, y_train, X_val, y_val,
 
     class_weights = get_class_weights(y_train)
 
-    # Augmentation first
-    if augment:
-        X_train, y_train = augment_mitterrand(X_train, y_train, multiplier=3)
-
-    # ── Context window ──
-    print("Adding sentence context (window=1)...")
-    X_train_ctx = add_context(X_train)
-    X_val_ctx   = add_context(X_val)
-
-    train_dataset = SpeechDataset(X_train_ctx, y_train, tokenizer, max_len=256)
-    val_dataset   = SpeechDataset(X_val_ctx,   y_val,   tokenizer, max_len=256)
+    train_dataset = SpeechDataset(X_train, y_train, tokenizer, max_len=256)
+    val_dataset   = SpeechDataset(X_val,   y_val,   tokenizer, max_len=256)
 
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -251,6 +242,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr",         type=float, default=2e-5,            help="Learning rate")
     parser.add_argument("--kfold",      type=int,   default=1,               help="Number of k-fold splits (1 = no kfold)")
     parser.add_argument("--augment",    action="store_true",                 help="Augment Mitterrand training sentences")
+    parser.add_argument("--context", action="store_true",                    help="Add neighboring sentence context around each sentence")
     args = parser.parse_args()
 
     train(args)
