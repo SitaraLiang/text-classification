@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import numpy as np
-from collections import defaultdict
 import torch
 from transformers import CamembertTokenizer, CamembertForSequenceClassification
 from sklearn.metrics import (
@@ -24,9 +23,6 @@ from sklearn.metrics import (
 from dataset import load_pres, split_data, SpeechDataset
 
 
-# ─────────────────────────────────────────
-# Load checkpoint
-# ─────────────────────────────────────────
 def load_checkpoint(checkpoint_path):
     """
     Loads tokenizer and model from a saved checkpoint directory.
@@ -40,9 +36,6 @@ def load_checkpoint(checkpoint_path):
     return tokenizer, model
 
 
-# ─────────────────────────────────────────
-# Predict probabilities
-# ─────────────────────────────────────────
 def predict_probs(model, tokenizer, texts, batch_size=32):
     """
     Returns P(Mitterrand) for each sentence in texts.
@@ -73,67 +66,35 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
 
     return np.array(all_probs)
 
-def aggregate_by_document(probs, doc_ids):
-    """
-    Average sentence-level probabilities within each document,
-    then propagate the document mean back to each sentence.
 
-    Example:
-        doc 100: sentences get P(M) = [0.3, 0.7, 0.4] → all become 0.467
-        doc 101: sentences get P(M) = [0.8, 0.9]      → all become 0.850
-    """
-    # Step 1: collect probs per document
-    doc_probs = defaultdict(list)
-    for doc_id, prob in zip(doc_ids, probs):
-        doc_probs[doc_id].append(prob)
-
-    # Step 2: compute mean per document
-    doc_mean = {doc_id: np.mean(p) for doc_id, p in doc_probs.items()}
-
-    # Step 3: propagate back to sentence level
-    aggregated = np.array([doc_mean[doc_id] for doc_id in doc_ids])
-    return aggregated
-
-
-
-# ─────────────────────────────────────────
-# Evaluate on validation set
-# ─────────────────────────────────────────
 def evaluate(checkpoint_path, fname):
     tokenizer, model = load_checkpoint(checkpoint_path)
 
     # Reload the same split used during training
-    alltxts, alllabs, alldocids = load_pres(fname)          # unpack doc IDs
-    _, X_val, _, y_val, _, ids_val = split_data(alltxts, alllabs, alldocids)
+    alltxts, alllabs = load_pres(fname)
+    _, X_val, _, y_val = split_data(alltxts, alllabs)
 
     print("\nRunning inference on validation set...")
     probs = predict_probs(model, tokenizer, X_val)
-
-    # ── Without aggregation ──
-    print("\n--- Without document aggregation ---")
     preds = (probs >= 0.5).astype(int)
-    print(f"F1:  {f1_score(y_val, preds, pos_label=1):.4f}")
-    print(f"AUC: {roc_auc_score(y_val, probs):.4f}")
-    print(f"AP:  {average_precision_score(y_val, probs, pos_label=1):.4f}")
 
-    # ── With aggregation ──
-    print("\n--- With document aggregation ---")
-    probs_agg = aggregate_by_document(probs, ids_val)        # apply aggregation
-    preds_agg = (probs_agg >= 0.5).astype(int)
-    f1  = f1_score(y_val, preds_agg, pos_label=1)
-    auc = roc_auc_score(y_val, probs_agg)
-    ap  = average_precision_score(y_val, probs_agg, pos_label=1)
-    print(f"F1:  {f1:.4f}")
-    print(f"AUC: {auc:.4f}")
-    print(f"AP:  {ap:.4f}")
-    print(classification_report(y_val, preds_agg, target_names=["Chirac", "Mitterrand"]))
+    f1  = f1_score(y_val, preds, pos_label=1, zero_division=0)
+    auc = roc_auc_score(y_val, probs)
+    ap  = average_precision_score(y_val, probs, pos_label=1)
 
-    return probs_agg
+    print(f"\n{'─'*40}")
+    print(f"  CamemBERT — Checkpoint Evaluation")
+    print(f"  {checkpoint_path}")
+    print(f"{'─'*40}")
+    print(f"  F1  (Mitterrand): {f1:.4f}")
+    print(f"  AUC (ROC):        {auc:.4f}")
+    print(f"  AP  (PR curve):   {ap:.4f}")
+    print(f"{'─'*40}")
+    print(classification_report(y_val, preds, target_names=["Chirac", "Mitterrand"]))
+
+    return probs, y_val
 
 
-# ─────────────────────────────────────────
-# Generate submission from test set
-# ─────────────────────────────────────────
 def generate_submission(checkpoint_path, test_fname, output_path):
     """
     Loads test sentences (no labels), predicts P(Mitterrand), saves to file.
@@ -166,7 +127,6 @@ def generate_submission(checkpoint_path, test_fname, output_path):
     print(f"  Predicted Mitterrand (p>0.5): {sum(probs > 0.5)}")
     print(f"  Predicted Chirac     (p<0.5): {sum(probs < 0.5)}")
     return probs
-
 
 
 if __name__ == "__main__":
