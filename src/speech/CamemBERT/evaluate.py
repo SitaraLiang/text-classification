@@ -168,9 +168,7 @@ def generate_submission(checkpoint_path, test_fname, output_path):
     return probs
 
 
-# ─────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate CamemBERT speaker classifier")
     parser.add_argument("--checkpoint",  type=str, required=True,  help="Path to saved checkpoint (best_model dir)")
