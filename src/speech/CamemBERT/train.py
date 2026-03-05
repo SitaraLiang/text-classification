@@ -2,14 +2,22 @@
 train.py
 ========
 Trains CamemBERT for speaker classification (Chirac / Mitterrand).
-Saves best checkpoint to --output_dir.
+Supports standard train/val split and k-fold cross-validation.
+Includes data augmentation for Mitterrand (minority class).
 
 Usage:
-    python train.py --fname ../../data/corpus.tache1.learn.utf8
-    python train.py --fname ../../data/corpus.tache1.learn.utf8 --output_dir ./checkpoints --strategy full --epochs 5
+    # Standard training
+    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full
+
+    # With augmentation
+    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full --augment
+
+    # K-fold cross-validation (finds best hyperparams, then trains final model)
+    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full --kfold 5 --augment
 """
 
 import argparse
+import numpy as np
 import torch
 import torch.nn as nn
 from transformers import (
@@ -20,12 +28,9 @@ from transformers import (
 )
 from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
 
-from dataset import load_pres, split_data, SpeechDataset
+from dataset import load_pres, split_data, kfold_splits, augment_mitterrand, add_context, SpeechDataset
 
 
-# ─────────────────────────────────────────
-# Weighted Trainer (handles class imbalance)
-# ─────────────────────────────────────────
 class WeightedTrainer(Trainer):
     def __init__(self, class_weights, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,9 +44,6 @@ class WeightedTrainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
 
-# ─────────────────────────────────────────
-# Metrics (called after each eval epoch)
-# ─────────────────────────────────────────
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     probs = torch.softmax(torch.tensor(logits), dim=1).numpy()[:, 1]
@@ -53,10 +55,7 @@ def compute_metrics(eval_pred):
     }
 
 
-# ─────────────────────────────────────────
-# Freeze strategy
-# ─────────────────────────────────────────
-def freeze_strategy(model, strategy="top_layers"):
+def freeze_strategy(model, strategy="full"):
     encoder_attr = next(
         (name for name in ["roberta", "camembert", "bert"] if hasattr(model, name)),
         None
@@ -79,7 +78,7 @@ def freeze_strategy(model, strategy="top_layers"):
             param.requires_grad = False
         for i, layer in enumerate(encoder.encoder.layer):
             for param in layer.parameters():
-                param.requires_grad = i >= 10  # train only layers 10-11
+                param.requires_grad = i >= 8
         for param in model.classifier.parameters():
             param.requires_grad = True
 
@@ -89,44 +88,50 @@ def freeze_strategy(model, strategy="top_layers"):
     print(f"Trainable: {trainable:,} / {total:,} ({100*trainable/total:.1f}%)")
     return model
 
-
-# ─────────────────────────────────────────
-# Main training function
-# ─────────────────────────────────────────
-def train(fname, output_dir, strategy, epochs, batch_size):
-
-    # Load & split data
-    alltxts, alllabs = load_pres(fname)
-    X_train, X_val, y_train, y_val = split_data(alltxts, alllabs)
-
-    # Tokenizer & model
-    print("\nLoading CamemBERT...")
-    tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
-    model     = CamembertForSequenceClassification.from_pretrained(
-        "camembert-base", num_labels=2
-    )
-    model = freeze_strategy(model, strategy=strategy)
-
-    # Class weights
+def get_class_weights(y_train):
     n_total      = len(y_train)
     n_chirac     = sum(1 for y in y_train if y == 0)
     n_mitterrand = sum(1 for y in y_train if y == 1)
     w_chirac     = n_total / (2 * n_chirac)
     w_mitterrand = n_total / (2 * n_mitterrand)
-    class_weights = torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
     print(f"Class weights → Chirac: {w_chirac:.3f} | Mitterrand: {w_mitterrand:.3f}")
+    return torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
 
-    # Datasets
-    train_dataset = SpeechDataset(X_train, y_train, tokenizer)
-    val_dataset   = SpeechDataset(X_val,   y_val,   tokenizer)
 
-    # Training args
+def train_one(X_train, y_train, X_val, y_val,
+              tokenizer, output_dir, epochs, batch_size, lr, augment):
+
+    # Fresh model for each fold
+    model = CamembertForSequenceClassification.from_pretrained(
+        "camembert-base", num_labels=2
+    )
+    model = freeze_strategy(model, strategy=args.strategy)
+
+    # Data augmentation on training set only
+    if augment:
+        X_train, y_train = augment_mitterrand(X_train, y_train, multiplier=3)
+
+    class_weights = get_class_weights(y_train)
+
+    # Augmentation first
+    if augment:
+        X_train, y_train = augment_mitterrand(X_train, y_train, multiplier=3)
+
+    # ── Context window ──
+    print("Adding sentence context (window=1)...")
+    X_train_ctx = add_context(X_train)
+    X_val_ctx   = add_context(X_val)
+
+    train_dataset = SpeechDataset(X_train_ctx, y_train, tokenizer, max_len=256)
+    val_dataset   = SpeechDataset(X_val_ctx,   y_val,   tokenizer, max_len=256)
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size * 2,
-        warmup_steps=500,
+        warmup_ratio=0.1,
+        learning_rate=lr,
         weight_decay=0.01,
         eval_strategy="epoch",
         save_strategy="epoch",
@@ -146,23 +151,106 @@ def train(fname, output_dir, strategy, epochs, batch_size):
         compute_metrics=compute_metrics,
     )
 
-    print("\nTraining...")
     trainer.train()
+    return trainer
 
-    # Save best model + tokenizer together
-    best_path = f"{output_dir}/best_model"
-    trainer.save_model(best_path)
-    tokenizer.save_pretrained(best_path)
-    print(f"\nBest model saved → {best_path}")
+
+def train(args):
+    alltxts, alllabs, alldocids = load_pres(args.fname)
+
+    # ── Add context BEFORE any split (preserves real speech order) ──
+    if args.context:
+        print("Adding sentence context (window=1)...")
+        alltxts = add_context(alltxts)
+        print(f"Context added to {len(alltxts)} sentences.")
+
+
+    print("\nLoading CamemBERT tokenizer...")
+    tokenizer = CamembertTokenizer.from_pretrained("camembert-base")
+
+    # ── K-Fold mode ──
+    if args.kfold > 1:
+        print(f"\n{'='*50}")
+        print(f"K-Fold Cross-Validation ({args.kfold} folds)")
+        print(f"{'='*50}")
+
+        fold_scores = []
+
+        for fold, X_train, X_val, y_train, y_val in kfold_splits(
+            alltxts, alllabs, n_splits=args.kfold
+        ):
+            fold_dir = f"{args.output_dir}/fold_{fold+1}"
+            print(f"\n{'─'*40}")
+            print(f"Training fold {fold+1}/{args.kfold}...")
+            print(f"{'─'*40}")
+
+            trainer = train_one(
+                X_train, y_train, X_val, y_val,
+                tokenizer, fold_dir,
+                args.epochs, args.batch_size, args.lr, args.augment
+            )
+
+            # Evaluate this fold
+            val_dataset = SpeechDataset(X_val, y_val, tokenizer, max_len=256)
+            preds_out   = trainer.predict(val_dataset)
+            logits      = preds_out.predictions
+            probs       = torch.softmax(torch.tensor(logits), dim=1).numpy()[:, 1]
+            preds       = (probs >= 0.5).astype(int)
+
+            f1  = f1_score(y_val, preds, pos_label=1, zero_division=0)
+            auc = roc_auc_score(y_val, probs)
+            ap  = average_precision_score(y_val, probs, pos_label=1)
+            fold_scores.append({"f1": f1, "auc": auc, "ap": ap})
+
+            print(f"Fold {fold+1} → F1: {f1:.4f} | AUC: {auc:.4f} | AP: {ap:.4f}")
+
+            # Save fold model
+            fold_best = f"{fold_dir}/best_model"
+            trainer.save_model(fold_best)
+            tokenizer.save_pretrained(fold_best)
+            print(f"Fold {fold+1} model saved → {fold_best}")
+
+        # Print k-fold summary
+        print(f"\n{'='*50}")
+        print(f"K-Fold Summary ({args.kfold} folds)")
+        print(f"{'='*50}")
+        for metric in ["f1", "auc", "ap"]:
+            vals = [s[metric] for s in fold_scores]
+            print(f"  {metric.upper():3s}: {np.mean(vals):.4f} ± {np.std(vals):.4f}")
+        print(f"{'='*50}")
+        print(f"\nBest fold by AP: fold {np.argmax([s['ap'] for s in fold_scores])+1}")
+        print(f"Use that fold's checkpoint for submission, or retrain on full data.")
+
+    # ── Standard single split mode ──
+    else:
+        print(f"\n{'='*50}")
+        print(f"Standard Train/Val Split")
+        print(f"{'='*50}")
+
+        X_train, X_val, y_train, y_val = split_data(alltxts, alllabs)
+
+        trainer = train_one(
+            X_train, y_train, X_val, y_val,
+            tokenizer, args.output_dir,
+            args.epochs, args.batch_size, args.lr, args.augment
+        )
+
+        best_path = f"{args.output_dir}/best_model"
+        trainer.save_model(best_path)
+        tokenizer.save_pretrained(best_path)
+        print(f"\nBest model saved → {best_path}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train CamemBERT speaker classifier")
-    parser.add_argument("--fname",      type=str, required=True,             help="Path to training corpus")
-    parser.add_argument("--output_dir", type=str, default="./checkpoints",   help="Where to save checkpoints")
-    parser.add_argument("--strategy",   type=str, default="top_layers",      help="Freeze strategy: full | head_only | top_layers")
-    parser.add_argument("--epochs",     type=int, default=3,                 help="Number of training epochs")
-    parser.add_argument("--batch_size", type=int, default=16,                help="Per-device train batch size")
+    parser.add_argument("--fname",      type=str,   required=True,           help="Path to training corpus")
+    parser.add_argument("--output_dir", type=str,   default="./checkpoints", help="Where to save checkpoints")
+    parser.add_argument("--strategy",   type=str,   default="full",          help="Freeze strategy: full | head_only | top_layers")
+    parser.add_argument("--epochs",     type=int,   default=3,               help="Number of training epochs")
+    parser.add_argument("--batch_size", type=int,   default=16,              help="Per-device train batch size")
+    parser.add_argument("--lr",         type=float, default=2e-5,            help="Learning rate")
+    parser.add_argument("--kfold",      type=int,   default=1,               help="Number of k-fold splits (1 = no kfold)")
+    parser.add_argument("--augment",    action="store_true",                 help="Augment Mitterrand training sentences")
     args = parser.parse_args()
 
-    train(args.fname, args.output_dir, args.strategy, args.epochs, args.batch_size)
+    train(args)

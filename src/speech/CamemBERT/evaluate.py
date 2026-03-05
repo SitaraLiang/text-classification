@@ -51,7 +51,7 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
             batch,
             truncation=True,
             padding=True,
-            max_length=128,
+            max_length=256,
             return_tensors="pt"
         ).to(device)
 
@@ -72,6 +72,13 @@ def evaluate(checkpoint_path, fname):
 
     # Reload the same split used during training
     alltxts, alllabs = load_pres(fname)
+
+    from collections import Counter
+    counts = Counter(alllabs)
+    print(f"Label distribution: {counts}")
+    print(f"  0 (Chirac):     {counts[0]}")
+    print(f"  1 (Mitterrand): {counts[1]}")
+
     _, X_val, _, y_val = split_data(alltxts, alllabs)
 
     print("\nRunning inference on validation set...")
