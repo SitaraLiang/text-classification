@@ -6,7 +6,12 @@
 #   Every time  : source setup_env.sh    (just activates the venv)
 # =============================================================
 
-PROJECT_DIR="/tempory/NUMERO_ETUDIANT/RITAL/text-classification"
+NUMERO_ETUDIANT = "NUMERO_ETUDIANT" # please change it
+export PIP_CACHE_DIR="/tempory/$NUMERO_ETUDIANT/.pip_cache"   # pip cache → tempory
+export TMPDIR="/tempory/$NUMERO_ETUDIANT/tmp"                  # temp files → tempory
+mkdir -p "$PIP_CACHE_DIR"
+mkdir -p "$TMPDIR"
+PROJECT_DIR="/tempory/$NUMERO_ETUDIANT/RITAL/text-classification"
 VENV_DIR="$PROJECT_DIR/venv"
 REQUIREMENTS="$PROJECT_DIR/requirements.txt"
 
