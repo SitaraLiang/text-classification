@@ -23,7 +23,7 @@ def load_pres(fname):
         alllabs : list of int labels (1=Mitterrand, 0=Chirac)
     """
     alltxts, alllabs = [], []
-    s = codecs(fname, 'r', 'utf-8')
+    s = codecs.open(fname, 'r', 'utf-8')
     while True:
         txt = s.readline()
         if len(txt) < 5:
