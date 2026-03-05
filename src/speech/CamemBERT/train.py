@@ -113,7 +113,8 @@ def train(fname, output_dir, strategy, epochs, batch_size):
     n_mitterrand = sum(1 for y in y_train if y == 1)
     w_chirac     = n_total / (2 * n_chirac)
     w_mitterrand = n_total / (2 * n_mitterrand)
-    class_weights = torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
+    #class_weights = torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
+    class_weights = torch.tensor([0.5, 5.0], dtype=torch.float)
     print(f"Class weights → Chirac: {w_chirac:.3f} | Mitterrand: {w_mitterrand:.3f}")
 
     # Datasets
