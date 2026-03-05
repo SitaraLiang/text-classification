@@ -6,7 +6,7 @@
 #   Every time  : source setup_env.sh    (just activates the venv)
 # =============================================================
 
-NUMERO_ETUDIANT = "NUMERO_ETUDIANT" # please change it
+NUMERO_ETUDIANT="NUMERO_ETUDIANT" # please change it
 export PIP_CACHE_DIR="/tempory/$NUMERO_ETUDIANT/.pip_cache"   # pip cache → tempory
 export TMPDIR="/tempory/$NUMERO_ETUDIANT/tmp"                  # temp files → tempory
 mkdir -p "$PIP_CACHE_DIR"
