@@ -96,8 +96,9 @@ def freeze_strategy(model, strategy="top_layers"):
 def train(fname, output_dir, strategy, epochs, batch_size):
 
     # Load & split data
-    alltxts, alllabs = load_pres(fname)
-    X_train, X_val, y_train, y_val = split_data(alltxts, alllabs)
+    alltxts, alllabs, alldocids = load_pres(fname)
+    X_train, X_val, y_train, y_val, ids_train, ids_val = split_data(alltxts, alllabs, alldocids)
+    # ids_train and ids_val are not used during training, but needed for evaluate.py
 
     # Tokenizer & model
     print("\nLoading CamemBERT...")

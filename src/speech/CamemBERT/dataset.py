@@ -22,28 +22,30 @@ def load_pres(fname):
         alltxts : list of sentence strings
         alllabs : list of int labels (1=Mitterrand, 0=Chirac)
     """
-    alltxts, alllabs = [], []
+    alltxts, alllabs, alldocids = [], [], []   # add alldocids
     s = codecs.open(fname, 'r', 'utf-8')
     while True:
         txt = s.readline()
         if len(txt) < 5:
             break
-        lab = re.sub(r"<[0-9]*:[0-9]*:(.)>.*", "\\1", txt)
-        txt = re.sub(r"<[0-9]*:[0-9]*:.>(.*)", "\\1", txt).strip()
-        alllabs.append(1 if "M" in lab else 0)  # Mitterrand=1, Chirac=0
+        doc_id = re.sub(r"<([0-9]+):[0-9]+:.>.*", "\\1", txt.strip())  # extract "100"
+        lab    = re.sub(r"<[0-9]*:[0-9]*:(.)>.*", "\\1", txt)
+        txt    = re.sub(r"<[0-9]*:[0-9]*:.>(.*)", "\\1", txt).strip()
+        alllabs.append(1 if "M" in lab else 0)
         alltxts.append(txt)
-    return alltxts, alllabs
+        alldocids.append(doc_id)               # store doc ID
+    return alltxts, alllabs, alldocids         # return it
 
 
-def split_data(alltxts, alllabs, test_size=0.2, random_state=42):
+def split_data(alltxts, alllabs, alldocids, test_size=0.2, random_state=42):
     """
     Stratified train/val split preserving 87/13 class ratio.
 
     Returns:
         X_train, X_val, y_train, y_val
     """
-    X_train, X_val, y_train, y_val = train_test_split(
-        alltxts, alllabs,
+    X_train, X_val, y_train, y_val, ids_train, ids_val = train_test_split(
+        alltxts, alllabs, alldocids,           # split doc IDs too
         test_size=test_size,
         random_state=random_state,
         stratify=alllabs
@@ -51,7 +53,7 @@ def split_data(alltxts, alllabs, test_size=0.2, random_state=42):
     print(f"Train: {len(X_train)} sentences | Val: {len(X_val)} sentences")
     print(f"Train Mitterrand: {sum(y_train)} ({100*sum(y_train)/len(y_train):.1f}%)")
     print(f"Val   Mitterrand: {sum(y_val)}   ({100*sum(y_val)/len(y_val):.1f}%)")
-    return X_train, X_val, y_train, y_val
+    return X_train, X_val, y_train, y_val, ids_train, ids_val
 
 
 class SpeechDataset(Dataset):
