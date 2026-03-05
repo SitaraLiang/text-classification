@@ -28,27 +28,27 @@ fi
 echo "No virtual environment found. Creating one..."
 
 if ! command -v python3 &> /dev/null; then
-    echo "python3 not found. Please load the python module first:"
-    echo "  module load python/3.10"
+    echo "python3 not found."
     return 1 2>/dev/null || exit 1
 fi
 
-# --system-site-packages reuses cluster packages → saves quota
-python3 -m venv "$VENV_DIR" --system-site-packages
+# No --system-site-packages: fully isolated venv to avoid permission errors
+python3 -m venv "$VENV_DIR"
 echo "Virtual environment created at $VENV_DIR"
 
 source "$VENV_DIR/bin/activate"
 echo "Activated: $(which python)"
 
-pip install --no-user --upgrade pip
+# Upgrade pip inside venv only
+python -m pip install --upgrade pip
 
 echo "Installing PyTorch (adjust cu118 to match: nvcc --version)..."
-pip install --no-user torch torchvision \
+pip install torch torchvision \
     --index-url https://download.pytorch.org/whl/cu118
 
 if [ -f "$REQUIREMENTS" ]; then
     echo "Installing from requirements.txt..."
-    pip install --no-user -r "$REQUIREMENTS"
+    pip install -r "$REQUIREMENTS"
 else
     echo "requirements.txt not found at $REQUIREMENTS"
 fi
