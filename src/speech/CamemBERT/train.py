@@ -99,15 +99,14 @@ def get_class_weights(y_train):
 
 
 def train_one(X_train, y_train, X_val, y_val,
-              tokenizer, output_dir, epochs, batch_size, lr, augment):
+              tokenizer, output_dir, epochs, batch_size, lr, augment, strategy):
+              #                                                         ↑ add strategy
 
-    # Fresh model for each fold
     model = CamembertForSequenceClassification.from_pretrained(
         "camembert-base", num_labels=2
     )
-    model = freeze_strategy(model, strategy=args.strategy)
+    model = freeze_strategy(model, strategy=strategy)  # ← was args.strategy (NameError!)
 
-    # Data augmentation on training set only
     if augment:
         X_train, y_train = augment_mitterrand(X_train, y_train, multiplier=3)
 
@@ -116,12 +115,17 @@ def train_one(X_train, y_train, X_val, y_val,
     train_dataset = SpeechDataset(X_train, y_train, tokenizer, max_len=256)
     val_dataset   = SpeechDataset(X_val,   y_val,   tokenizer, max_len=256)
 
+    # Calculate warmup_steps explicitly (replaces deprecated warmup_ratio)
+    steps_per_epoch = len(X_train) // batch_size
+    total_steps     = steps_per_epoch * epochs
+    warmup_steps    = int(0.1 * total_steps)
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size * 2,
-        warmup_ratio=0.1,
+        warmup_steps=warmup_steps,             # ← replaces warmup_ratio
         learning_rate=lr,
         weight_decay=0.01,
         eval_strategy="epoch",
@@ -144,7 +148,6 @@ def train_one(X_train, y_train, X_val, y_val,
 
     trainer.train()
     return trainer
-
 
 def train(args):
     alltxts, alllabs, alldocids = load_pres(args.fname)
@@ -178,7 +181,7 @@ def train(args):
             trainer = train_one(
                 X_train, y_train, X_val, y_val,
                 tokenizer, fold_dir,
-                args.epochs, args.batch_size, args.lr, args.augment
+                args.epochs, args.batch_size, args.lr, args.augment, args.strategy 
             )
 
             # Evaluate this fold
@@ -223,7 +226,7 @@ def train(args):
         trainer = train_one(
             X_train, y_train, X_val, y_val,
             tokenizer, args.output_dir,
-            args.epochs, args.batch_size, args.lr, args.augment
+            args.epochs, args.batch_size, args.lr, args.augment, args.strategy  # ← add
         )
 
         best_path = f"{args.output_dir}/best_model"

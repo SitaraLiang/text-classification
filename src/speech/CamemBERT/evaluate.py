@@ -71,7 +71,7 @@ def evaluate(checkpoint_path, fname):
     tokenizer, model = load_checkpoint(checkpoint_path)
 
     # Reload the same split used during training
-    alltxts, alllabs = load_pres(fname)
+    alltxts, alllabs, _ = load_pres(fname)
 
     from collections import Counter
     counts = Counter(alllabs)
