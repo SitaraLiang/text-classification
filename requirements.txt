@@ -1,0 +1,13 @@
+numpy
+scikit-learn
+imbalanced-learn
+gensim
+nltk
+python-crfsuite 
+sklearn-crfsuite
+spacy 
+torch
+transformers[torch]
+accelerate>=1.1.0
+scipy
+matplotlib
