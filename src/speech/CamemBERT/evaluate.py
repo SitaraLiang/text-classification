@@ -73,12 +73,12 @@ def evaluate(checkpoint_path, fname, use_context=False):
 
     alltxts, alllabs, alldocids = load_pres(fname)
 
-    # ── Apply same context window used during training ──
+    # ── Apply context BEFORE split (mirrors train.py exactly) ──
     if use_context:
         print("Adding sentence context (window=2)...")
         alltxts = add_context(alltxts, alldocids, window=2)
-        print(f"Context added to {len(alltxts)} sentences.")
 
+    # ── Split after context (same random_state=42 as train.py) ──
     _, X_val, _, y_val = split_data(alltxts, alllabs)
 
     print("\nRunning inference on validation set...")
@@ -91,7 +91,6 @@ def evaluate(checkpoint_path, fname, use_context=False):
 
     print(f"\n{'─'*40}")
     print(f"  CamemBERT — Checkpoint Evaluation")
-    print(f"  {checkpoint_path}")
     print(f"  context={'yes (window=2)' if use_context else 'no'}")
     print(f"{'─'*40}")
     print(f"  F1  (Mitterrand): {f1:.4f}")
@@ -100,20 +99,12 @@ def evaluate(checkpoint_path, fname, use_context=False):
     print(f"{'─'*40}")
     print(classification_report(y_val, preds, target_names=["Chirac", "Mitterrand"]))
 
-    # ── Threshold tuning (reference only) ──
-    print(f"\n{'─'*40}")
-    print(f"  Threshold tuning (reference only)")
-    print(f"{'─'*40}")
+    # ── Threshold tuning ──
     thresholds = np.arange(0.1, 0.9, 0.01)
     f1_scores  = [f1_score(y_val, (probs >= t).astype(int), pos_label=1)
                   for t in thresholds]
     best_t = thresholds[np.argmax(f1_scores)]
-    print(f"  Best threshold: {best_t:.2f} → F1={max(f1_scores):.4f}")
-    print(f"  AUC: {auc:.4f} | AP: {ap:.4f}  (unchanged — threshold-independent)")
-    print(f"{'─'*40}")
-    preds_best = (probs >= best_t).astype(int)
-    print(classification_report(y_val, preds_best, target_names=["Chirac", "Mitterrand"]))
-    print("NOTE: submission always uses raw probabilities — prof applies 0.5 cutoff.")
+    print(f"\n  Best threshold: {best_t:.2f} → F1={max(f1_scores):.4f}")
 
     return probs, y_val, X_val
 
