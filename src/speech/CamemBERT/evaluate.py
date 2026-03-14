@@ -136,6 +136,56 @@ def generate_submission(checkpoint_path, test_fname, output_path, use_context=Fa
     return probs
 
 
+def generate_submission_ensemble(fold_checkpoints, test_fname, output_path, use_context=False):
+    """
+    Averages probabilities from multiple fold checkpoints.
+    More robust than any single fold on unseen test data.
+    """
+    # Load test texts once
+    test_texts, test_docids = [], []
+    with open(test_fname, 'r', encoding='utf-8') as f:
+        for line in f:
+            if len(line.strip()) < 2:
+                continue
+            doc_id = re.sub(r"<([0-9]+):[0-9]+>.*", "\\1", line.strip())
+            txt    = re.sub(r"<[0-9]+:[0-9]+>(.*)", "\\1", line).strip()
+            if not txt:
+                txt = line.strip()
+                doc_id = str(len(test_texts))
+            test_texts.append(txt)
+            test_docids.append(doc_id)
+
+    if use_context:
+        print("Adding sentence context (window=2)...")
+        test_texts = add_context(test_texts, test_docids, window=2)
+
+    print(f"Loaded {len(test_texts)} test sentences.")
+
+    # Collect probabilities from each fold
+    all_probs = []
+    for i, checkpoint_path in enumerate(fold_checkpoints):
+        print(f"\nFold {i+1}/{len(fold_checkpoints)}: {checkpoint_path}")
+        tokenizer, model = load_checkpoint(checkpoint_path)
+        probs = predict_probs(model, tokenizer, test_texts)
+        all_probs.append(probs)
+        print(f"  Mitterrand (p>0.5): {sum(probs > 0.5)}")
+
+    # Average across all folds
+    ensemble_probs = np.mean(all_probs, axis=0)
+
+    print(f"\n{'─'*40}")
+    print(f"Ensemble of {len(fold_checkpoints)} folds")
+    print(f"  Mitterrand (p>0.5): {sum(ensemble_probs > 0.5)}")
+    print(f"  Chirac     (p<0.5): {sum(ensemble_probs < 0.5)}")
+    print(f"{'─'*40}")
+
+    with open(output_path, 'w') as f:
+        for p in ensemble_probs:
+            f.write(f"{p:.6f}\n")
+
+    print(f"Ensemble submission saved → {output_path} ({len(ensemble_probs)} lines)")
+    return ensemble_probs
+
 # ─────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────
@@ -151,10 +201,28 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.test_fname:
-        generate_submission(
-            args.checkpoint, args.test_fname,
-            args.submission, use_context=args.context
+
+        BASE = "/tempory/21500112/RITAL/text-classification"
+        CKPT = f"{BASE}/src/speech/CamemBERT/checkpoints_kfold"
+
+        fold_checkpoints = [
+            f"{CKPT}/fold_1/best_model",
+            f"{CKPT}/fold_2/best_model",
+            f"{CKPT}/fold_3/best_model",
+            f"{CKPT}/fold_4/best_model",
+            f"{CKPT}/fold_5/best_model",
+        ]
+
+        generate_submission_ensemble(
+            fold_checkpoints=fold_checkpoints,
+            test_fname=f"{BASE}/data/test/corpus.tache1.test.utf8",
+            output_path=f"{BASE}/submission-pres-v1.txt",
+            use_context=True
         )
+        #generate_submission(
+            #args.checkpoint, args.test_fname,
+            #args.submission, use_context=args.context
+        #)
     elif args.fname:
         probs, y_val, X_val = evaluate(
             args.checkpoint, args.fname,
