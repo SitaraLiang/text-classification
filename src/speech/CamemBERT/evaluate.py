@@ -4,15 +4,21 @@ evaluate.py
 Loads a saved checkpoint and evaluates on validation set, or generates
 submission probabilities for the test set.
 
-Usage:
-    # Evaluate on validation set
-    python evaluate.py --fname ../../data/corpus.tache1.learn.utf8 --checkpoint ./checkpoints/best_model
+IMPORTANT: Always pass --context if the model was trained with --context.
 
-    # Generate submission file from test set
-    python evaluate.py --checkpoint ./checkpoints/best_model --test_fname ../../data/test.utf8 --submission submission.txt
+Usage:
+    # Evaluate on validation set (with context)
+    python evaluate.py --checkpoint ./checkpoints/best_model --fname ../../data/corpus.tache1.learn.utf8 --context
+
+    # Generate submission file from test set (with context)
+    python evaluate.py --checkpoint ./checkpoints/best_model --test_fname ../../data/test.utf8 --submission submission.txt --context
+
+    # Without context (only if model was trained without --context)
+    python evaluate.py --checkpoint ./checkpoints/best_model --fname ../../data/corpus.tache1.learn.utf8
 """
 
 import argparse
+import re
 import numpy as np
 import torch
 from transformers import CamembertTokenizer, CamembertForSequenceClassification
@@ -20,14 +26,10 @@ from sklearn.metrics import (
     f1_score, roc_auc_score, average_precision_score, classification_report
 )
 
-from dataset import load_pres, split_data, SpeechDataset
+from dataset import load_pres, split_data, add_context
 
 
 def load_checkpoint(checkpoint_path):
-    """
-    Loads tokenizer and model from a saved checkpoint directory.
-    The checkpoint must have been saved with tokenizer.save_pretrained().
-    """
     print(f"Loading checkpoint from: {checkpoint_path}")
     tokenizer = CamembertTokenizer.from_pretrained(checkpoint_path)
     model     = CamembertForSequenceClassification.from_pretrained(checkpoint_path)
@@ -35,10 +37,9 @@ def load_checkpoint(checkpoint_path):
     print("Checkpoint loaded.")
     return tokenizer, model
 
-
 def predict_probs(model, tokenizer, texts, batch_size=32):
     """
-    Returns P(Mitterrand) for each sentence in texts.
+    Returns P(Mitterrand) for each sentence.
     Runs inference in batches to avoid OOM.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -46,7 +47,7 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
 
     all_probs = []
     for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
+        batch  = texts[i : i + batch_size]
         inputs = tokenizer(
             batch,
             truncation=True,
@@ -67,17 +68,16 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
     return np.array(all_probs)
 
 
-def evaluate(checkpoint_path, fname):
+def evaluate(checkpoint_path, fname, use_context=False):
     tokenizer, model = load_checkpoint(checkpoint_path)
 
-    # Reload the same split used during training
-    alltxts, alllabs, _ = load_pres(fname)
+    alltxts, alllabs, alldocids = load_pres(fname)
 
-    from collections import Counter
-    counts = Counter(alllabs)
-    print(f"Label distribution: {counts}")
-    print(f"  0 (Chirac):     {counts[0]}")
-    print(f"  1 (Mitterrand): {counts[1]}")
+    # ── Apply same context window used during training ──
+    if use_context:
+        print("Adding sentence context (window=2)...")
+        alltxts = add_context(alltxts, alldocids, window=2)
+        print(f"Context added to {len(alltxts)} sentences.")
 
     _, X_val, _, y_val = split_data(alltxts, alllabs)
 
@@ -92,6 +92,7 @@ def evaluate(checkpoint_path, fname):
     print(f"\n{'─'*40}")
     print(f"  CamemBERT — Checkpoint Evaluation")
     print(f"  {checkpoint_path}")
+    print(f"  context={'yes (window=2)' if use_context else 'no'}")
     print(f"{'─'*40}")
     print(f"  F1  (Mitterrand): {f1:.4f}")
     print(f"  AUC (ROC):        {auc:.4f}")
@@ -99,30 +100,52 @@ def evaluate(checkpoint_path, fname):
     print(f"{'─'*40}")
     print(classification_report(y_val, preds, target_names=["Chirac", "Mitterrand"]))
 
+    # ── Threshold tuning (reference only) ──
+    print(f"\n{'─'*40}")
+    print(f"  Threshold tuning (reference only)")
+    print(f"{'─'*40}")
+    thresholds = np.arange(0.1, 0.9, 0.01)
+    f1_scores  = [f1_score(y_val, (probs >= t).astype(int), pos_label=1)
+                  for t in thresholds]
+    best_t = thresholds[np.argmax(f1_scores)]
+    print(f"  Best threshold: {best_t:.2f} → F1={max(f1_scores):.4f}")
+    print(f"  AUC: {auc:.4f} | AP: {ap:.4f}  (unchanged — threshold-independent)")
+    print(f"{'─'*40}")
+    preds_best = (probs >= best_t).astype(int)
+    print(classification_report(y_val, preds_best, target_names=["Chirac", "Mitterrand"]))
+    print("NOTE: submission always uses raw probabilities — prof applies 0.5 cutoff.")
+
     return probs, y_val, X_val
 
 
-def generate_submission(checkpoint_path, test_fname, output_path):
+def generate_submission(checkpoint_path, test_fname, output_path, use_context=False):
     """
-    Loads test sentences (no labels), predicts P(Mitterrand), saves to file.
-    Test file format: same as train but labels can be anything (ignored).
+    One probability per line — prof applies 0.5 cutoff on their end.
+    IMPORTANT: use_context must match what was used during training.
     """
     tokenizer, model = load_checkpoint(checkpoint_path)
 
-    # Load test sentences — strip labels if present, otherwise load raw lines
-    test_texts = []
+    test_texts, test_docids = [], []
     with open(test_fname, 'r', encoding='utf-8') as f:
         for line in f:
             if len(line.strip()) < 2:
                 continue
-            # Strip label tag if present, otherwise use line as-is
-            import re
-            txt = re.sub(r"<[0-9]*:[0-9]*:.>(.*)", "\\1", line).strip()
+            doc_id = re.sub(r"<([0-9]+):[0-9]+:.>.*", "\\1", line.strip())
+            txt    = re.sub(r"<[0-9]*:[0-9]*:.>(.*)", "\\1", line).strip()
             if not txt:
                 txt = line.strip()
+                doc_id = str(len(test_texts))  # fallback doc_id for untagged lines
             test_texts.append(txt)
+            test_docids.append(doc_id)
 
     print(f"\nLoaded {len(test_texts)} test sentences.")
+
+    # ── Apply same context window used during training ──
+    if use_context:
+        print("Adding sentence context (window=2)...")
+        test_texts = add_context(test_texts, test_docids, window=2)
+        print(f"Context added.")
+
     print("Running inference...")
     probs = predict_probs(model, tokenizer, test_texts)
 
@@ -136,42 +159,49 @@ def generate_submission(checkpoint_path, test_fname, output_path):
     return probs
 
 
+# ─────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate CamemBERT speaker classifier")
-    parser.add_argument("--checkpoint",  type=str, required=True,  help="Path to saved checkpoint (best_model dir)")
-    parser.add_argument("--fname",       type=str, default=None,   help="Training corpus path (for val evaluation)")
-    parser.add_argument("--test_fname",  type=str, default=None,   help="Test corpus path (for submission generation)")
-    parser.add_argument("--submission",  type=str, default="submission_camembert.txt", help="Output submission file path")
+    parser.add_argument("--checkpoint", type=str, required=True,                      help="Path to saved checkpoint (best_model dir)")
+    parser.add_argument("--fname",      type=str, default=None,                       help="Training corpus path (for val evaluation)")
+    parser.add_argument("--test_fname", type=str, default=None,                       help="Test corpus path (for submission generation)")
+    parser.add_argument("--submission", type=str, default="submission_camembert.txt", help="Output submission file path")
+    parser.add_argument("--context",    action="store_true",                          help="Apply context window=2 (must match training config)")
     args = parser.parse_args()
 
     if args.test_fname:
-        # Generate submission for test set
-        generate_submission(args.checkpoint, args.test_fname, args.submission)
-
+        generate_submission(
+            args.checkpoint, args.test_fname,
+            args.submission, use_context=args.context
+        )
     elif args.fname:
-        # Evaluate on validation set
-        probs, y_val, X_val = evaluate(args.checkpoint, args.fname)
+        probs, y_val, X_val = evaluate(
+            args.checkpoint, args.fname,
+            use_context=args.context
+        )
+
+        """
+        # ── Diagnosis: missed vs easy Mitterrand sentences ──
         wrong_mitterrand = [
             (text, prob)
             for text, label, prob in zip(X_val, y_val, probs)
             if label == 1 and prob < 0.3
         ]
-
         easy_mitterrand = [
             (text, prob)
             for text, label, prob in zip(X_val, y_val, probs)
             if label == 1 and prob > 0.7
         ]
-
-        print(f"Strongly MISSED Mitterrand: {len(wrong_mitterrand)}")
+        print(f"\nStrongly MISSED Mitterrand: {len(wrong_mitterrand)}")
         print(f"Correctly found Mitterrand: {len(easy_mitterrand)}")
         print(f"\n--- 20 most missed Mitterrand sentences ---")
         for text, prob in sorted(wrong_mitterrand, key=lambda x: x[1])[:20]:
             print(f"  p={prob:.3f} | {text.strip()[:100]}")
-
         print(f"\n--- 20 easiest Mitterrand sentences ---")
         for text, prob in sorted(easy_mitterrand, key=lambda x: x[1], reverse=True)[:20]:
             print(f"  p={prob:.3f} | {text.strip()[:100]}")
-
+        """
     else:
-        print("Please provide either --fname (for validation) or --test_fname (for submission).")
+        print("Please provide either --fname (validation) or --test_fname (submission).")
