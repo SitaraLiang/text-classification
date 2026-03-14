@@ -103,15 +103,10 @@ def generate_submission(checkpoint_path, test_fname, output_path, use_context=Fa
             if len(line.strip()) < 2:
                 continue
 
-            # ── Handle both formats ──
-            # With label:    <105:1:C> text
-            # Without label: <105:1> text  ← test file format
-            doc_id = re.sub(r"<([0-9]+):[0-9]+:?.>.*", "\\1", line.strip())
-            if doc_id == line.strip():  # regex didn't match, try without label
-                doc_id = re.sub(r"<([0-9]+):[0-9]+>.*", "\\1", line.strip())
+            # Test file format: <105:1> text  (no label character)
+            doc_id = re.sub(r"<([0-9]+):[0-9]+>.*", "\\1", line.strip())
+            txt    = re.sub(r"<[0-9]+:[0-9]+>(.*)", "\\1", line).strip()
 
-            # Strip the tag to get clean text
-            txt = re.sub(r"<[0-9]+:[0-9]+:?.>(.*)", "\\1", line).strip()
             if not txt:
                 txt    = line.strip()
                 doc_id = str(len(test_texts))
