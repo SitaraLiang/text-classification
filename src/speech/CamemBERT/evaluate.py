@@ -198,31 +198,26 @@ if __name__ == "__main__":
     parser.add_argument("--context",    action="store_true",                          help="Apply context window=2 (must match training config)")
     parser.add_argument("--fold",    type=int, default=None, help="Which fold to evaluate on (1-5). Must match the checkpoint's fold.")
     parser.add_argument("--n_folds", type=int, default=5,    help="Total number of folds used during training.")
+    parser.add_argument("--ensemble", action="store_true", help="Use all 5 folds ensemble for submission")
+    parser.add_argument("--ckpt_dir", type=str, default=None, help="Base checkpoint dir containing fold_1..fold_5 (for ensemble)")
+
     args = parser.parse_args()
 
-    if args.test_fname:
-
-        BASE = "/tempory/21500112/RITAL/text-classification"
-        CKPT = f"{BASE}/src/speech/CamemBERT/checkpoints_kfold"
-
+    if args.ensemble and args.test_fname:
         fold_checkpoints = [
-            f"{CKPT}/fold_1/best_model",
-            f"{CKPT}/fold_2/best_model",
-            f"{CKPT}/fold_3/best_model",
-            f"{CKPT}/fold_4/best_model",
-            f"{CKPT}/fold_5/best_model",
+            f"{args.ckpt_dir}/fold_{i}/best_model" for i in range(1, 6)
         ]
-
         generate_submission_ensemble(
             fold_checkpoints=fold_checkpoints,
-            test_fname=f"{BASE}/data/test/corpus.tache1.test.utf8",
-            output_path=f"{BASE}/submission-pres-v1.txt",
-            use_context=True
+            test_fname=args.test_fname,
+            output_path=args.submission,
+            use_context=args.context
         )
-        #generate_submission(
-            #args.checkpoint, args.test_fname,
-            #args.submission, use_context=args.context
-        #)
+    elif args.test_fname:
+        generate_submission(
+            args.checkpoint, args.test_fname,
+            args.submission, use_context=args.context
+        )
     elif args.fname:
         probs, y_val, X_val = evaluate(
             args.checkpoint, args.fname,
