@@ -40,7 +40,8 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
         with torch.no_grad():
             logits = model(**inputs).logits
 
-        probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
+        #probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
+        probs = torch.softmax(logits, dim=1)[:, 0].cpu().numpy()  # P(Chirac) = column 0
         all_probs.extend(probs)
 
         if (i // batch_size) % 10 == 0:
