@@ -99,7 +99,7 @@ def evaluate(checkpoint_path, fname):
     print(f"{'─'*40}")
     print(classification_report(y_val, preds, target_names=["Chirac", "Mitterrand"]))
 
-    return probs, y_val
+    return probs, y_val, X_val
 
 
 def generate_submission(checkpoint_path, test_fname, output_path):
@@ -150,7 +150,27 @@ if __name__ == "__main__":
 
     elif args.fname:
         # Evaluate on validation set
-        evaluate(args.checkpoint, args.fname)
+        probs, y_val, X_val = evaluate(args.checkpoint, args.fname)  # ← unpack X_val
+
+        wrong_mitterrand = [
+            (text, prob)
+            for text, label, prob in zip(X_val, y_val, probs)
+            if label == 1 and prob < 0.3
+        ]
+        easy_mitterrand = [
+            (text, prob)
+            for text, label, prob in zip(X_val, y_val, probs)
+            if label == 1 and prob > 0.7
+        ]
+
+        print(f"Strongly MISSED Mitterrand: {len(wrong_mitterrand)}")
+        print(f"Correctly found Mitterrand: {len(easy_mitterrand)}")
+        print(f"\n--- 20 most missed Mitterrand sentences ---")
+        for text, prob in sorted(wrong_mitterrand, key=lambda x: x[1])[:20]:
+            print(f"  p={prob:.3f} | {text.strip()[:100]}")
+        print(f"\n--- 20 easiest Mitterrand sentences ---")
+        for text, prob in sorted(easy_mitterrand, key=lambda x: x[1], reverse=True)[:20]:
+            print(f"  p={prob:.3f} | {text.strip()[:100]}")
 
     else:
         print("Please provide either --fname (for validation) or --test_fname (for submission).")

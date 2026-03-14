@@ -1,3 +1,5 @@
+src/speech/CamemBERT/checkpoints_kfold/
+
 # VSCODE
 .DS_Store
 ./dataset/
