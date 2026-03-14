@@ -155,7 +155,7 @@ def train(args):
     # ── Add context BEFORE any split (preserves real speech order) ──
     if args.context:
         print("Adding sentence context (window=1)...")
-        alltxts = add_context(alltxts)
+        alltxts = add_context(alltxts, alldocids, window=2)
         print(f"Context added to {len(alltxts)} sentences.")
 
 

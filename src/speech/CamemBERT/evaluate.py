@@ -150,13 +150,13 @@ if __name__ == "__main__":
 
     elif args.fname:
         # Evaluate on validation set
-        probs, y_val, X_val = evaluate(args.checkpoint, args.fname)  # ← unpack X_val
-
+        probs, y_val, X_val = evaluate(args.checkpoint, args.fname)
         wrong_mitterrand = [
             (text, prob)
             for text, label, prob in zip(X_val, y_val, probs)
             if label == 1 and prob < 0.3
         ]
+
         easy_mitterrand = [
             (text, prob)
             for text, label, prob in zip(X_val, y_val, probs)
@@ -168,6 +168,7 @@ if __name__ == "__main__":
         print(f"\n--- 20 most missed Mitterrand sentences ---")
         for text, prob in sorted(wrong_mitterrand, key=lambda x: x[1])[:20]:
             print(f"  p={prob:.3f} | {text.strip()[:100]}")
+
         print(f"\n--- 20 easiest Mitterrand sentences ---")
         for text, prob in sorted(easy_mitterrand, key=lambda x: x[1], reverse=True)[:20]:
             print(f"  p={prob:.3f} | {text.strip()[:100]}")

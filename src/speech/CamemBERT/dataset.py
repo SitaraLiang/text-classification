@@ -177,39 +177,25 @@ def augment_mitterrand(X_train, y_train, multiplier=3, random_state=42):
     return X_aug, y_aug
 
 
-def add_context(texts, window=1, sep_token="</s>"):
+def add_context(texts, doc_ids, window=2, sep_token="</s>"):
     """
-    Concatenates neighboring sentences as context around each sentence.
-    Format: [prev] </s> [current] </s> [next]
-    
-    This helps disambiguate short/ambiguous sentences by giving the model
-    surrounding context from the same speech.
-
-    Args:
-        texts     : list of sentences in original order
-        window    : number of neighboring sentences on each side (default 1)
-        sep_token : separator token (CamemBERT uses </s>)
-
-    Returns:
-        list of contextualized sentences, same length as input
+    Adds context only from the same document.
+    window=2 means 2 sentences before and after.
     """
     contextualized = []
     for i, text in enumerate(texts):
+        left, right = [], []
 
-        # Collect left context
-        left = []
         for j in range(max(0, i - window), i):
-            left.append(texts[j])
+            if doc_ids[j] == doc_ids[i]:
+                left.append(texts[j])
 
-        # Collect right context
-        right = []
         for j in range(i + 1, min(len(texts), i + window + 1)):
-            right.append(texts[j])
+            if doc_ids[j] == doc_ids[i]:
+                right.append(texts[j])
 
-        # Build: prev </s> current </s> next
         parts = left + [text] + right
-        combined = f" {sep_token} ".join(parts)
-        contextualized.append(combined)
+        contextualized.append(f" {sep_token} ".join(parts))
 
     return contextualized
 
