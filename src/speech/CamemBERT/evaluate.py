@@ -95,10 +95,6 @@ def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5):
     return probs, y_val, X_val
 
 def generate_submission(checkpoint_path, test_fname, output_path, use_context=False):
-    """
-    One probability per line — prof applies 0.5 cutoff on their end.
-    IMPORTANT: use_context must match what was used during training.
-    """
     tokenizer, model = load_checkpoint(checkpoint_path)
 
     test_texts, test_docids = [], []
@@ -106,21 +102,31 @@ def generate_submission(checkpoint_path, test_fname, output_path, use_context=Fa
         for line in f:
             if len(line.strip()) < 2:
                 continue
-            doc_id = re.sub(r"<([0-9]+):[0-9]+:.>.*", "\\1", line.strip())
-            txt    = re.sub(r"<[0-9]*:[0-9]*:.>(.*)", "\\1", line).strip()
+
+            # ── Handle both formats ──
+            # With label:    <105:1:C> text
+            # Without label: <105:1> text  ← test file format
+            doc_id = re.sub(r"<([0-9]+):[0-9]+:?.>.*", "\\1", line.strip())
+            if doc_id == line.strip():  # regex didn't match, try without label
+                doc_id = re.sub(r"<([0-9]+):[0-9]+>.*", "\\1", line.strip())
+
+            # Strip the tag to get clean text
+            txt = re.sub(r"<[0-9]+:[0-9]+:?.>(.*)", "\\1", line).strip()
             if not txt:
-                txt = line.strip()
-                doc_id = str(len(test_texts))  # fallback doc_id for untagged lines
+                txt    = line.strip()
+                doc_id = str(len(test_texts))
+
             test_texts.append(txt)
             test_docids.append(doc_id)
 
-    print(f"\nLoaded {len(test_texts)} test sentences.")
+    print(f"Loaded {len(test_texts)} sentences")
+    print(f"Unique docs: {len(set(test_docids))}")
+    print(f"Sample: doc={test_docids[0]} | {test_texts[0][:60]}")
 
-    # ── Apply same context window used during training ──
     if use_context:
         print("Adding sentence context (window=2)...")
         test_texts = add_context(test_texts, test_docids, window=2)
-        print(f"Context added.")
+        print("Context added.")
 
     print("Running inference...")
     probs = predict_probs(model, tokenizer, test_texts)
