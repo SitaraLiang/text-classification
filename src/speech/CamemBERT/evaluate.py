@@ -1,22 +1,3 @@
-"""
-evaluate.py
-===========
-Loads a saved checkpoint and evaluates on validation set, or generates
-submission probabilities for the test set.
-
-IMPORTANT: Always pass --context if the model was trained with --context.
-
-Usage:
-    # Evaluate on validation set (with context)
-    python evaluate.py --checkpoint ./checkpoints/best_model --fname ../../data/corpus.tache1.learn.utf8 --context
-
-    # Generate submission file from test set (with context)
-    python evaluate.py --checkpoint ./checkpoints/best_model --test_fname ../../data/test.utf8 --submission submission.txt --context
-
-    # Without context (only if model was trained without --context)
-    python evaluate.py --checkpoint ./checkpoints/best_model --fname ../../data/corpus.tache1.learn.utf8
-"""
-
 import argparse
 import re
 import numpy as np
@@ -68,18 +49,29 @@ def predict_probs(model, tokenizer, texts, batch_size=32):
     return np.array(all_probs)
 
 
-def evaluate(checkpoint_path, fname, use_context=False):
+def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5):
     tokenizer, model = load_checkpoint(checkpoint_path)
 
     alltxts, alllabs, alldocids = load_pres(fname)
 
-    # ── Apply context BEFORE split (mirrors train.py exactly) ──
+    # Apply context before split
     if use_context:
         print("Adding sentence context (window=2)...")
         alltxts = add_context(alltxts, alldocids, window=2)
 
-    # ── Split after context (same random_state=42 as train.py) ──
-    _, X_val, _, y_val = split_data(alltxts, alllabs)
+    # ── Use same fold split as training ──
+    if fold is not None:
+        from sklearn.model_selection import StratifiedKFold
+        import numpy as np
+        skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+        splits = list(skf.split(alltxts, alllabs))
+        train_idx, val_idx = splits[fold - 1]   # fold is 1-indexed
+        X_val = [alltxts[i] for i in val_idx]
+        y_val = [alllabs[i] for i in val_idx]
+        print(f"Using fold {fold}/{n_folds} val set: {len(X_val)} sentences")
+    else:
+        # Standard 80/20 split
+        _, X_val, _, y_val = split_data(alltxts, alllabs)
 
     print("\nRunning inference on validation set...")
     probs = predict_probs(model, tokenizer, X_val)
@@ -92,6 +84,7 @@ def evaluate(checkpoint_path, fname, use_context=False):
     print(f"\n{'─'*40}")
     print(f"  CamemBERT — Checkpoint Evaluation")
     print(f"  context={'yes (window=2)' if use_context else 'no'}")
+    print(f"  fold={fold if fold else 'standard split'}")
     print(f"{'─'*40}")
     print(f"  F1  (Mitterrand): {f1:.4f}")
     print(f"  AUC (ROC):        {auc:.4f}")
@@ -99,15 +92,7 @@ def evaluate(checkpoint_path, fname, use_context=False):
     print(f"{'─'*40}")
     print(classification_report(y_val, preds, target_names=["Chirac", "Mitterrand"]))
 
-    # ── Threshold tuning ──
-    thresholds = np.arange(0.1, 0.9, 0.01)
-    f1_scores  = [f1_score(y_val, (probs >= t).astype(int), pos_label=1)
-                  for t in thresholds]
-    best_t = thresholds[np.argmax(f1_scores)]
-    print(f"\n  Best threshold: {best_t:.2f} → F1={max(f1_scores):.4f}")
-
     return probs, y_val, X_val
-
 
 def generate_submission(checkpoint_path, test_fname, output_path, use_context=False):
     """
@@ -160,6 +145,8 @@ if __name__ == "__main__":
     parser.add_argument("--test_fname", type=str, default=None,                       help="Test corpus path (for submission generation)")
     parser.add_argument("--submission", type=str, default="submission_camembert.txt", help="Output submission file path")
     parser.add_argument("--context",    action="store_true",                          help="Apply context window=2 (must match training config)")
+    parser.add_argument("--fold",    type=int, default=None, help="Which fold to evaluate on (1-5). Must match the checkpoint's fold.")
+    parser.add_argument("--n_folds", type=int, default=5,    help="Total number of folds used during training.")
     args = parser.parse_args()
 
     if args.test_fname:
@@ -170,7 +157,9 @@ if __name__ == "__main__":
     elif args.fname:
         probs, y_val, X_val = evaluate(
             args.checkpoint, args.fname,
-            use_context=args.context
+            use_context=args.context,
+            fold=args.fold,
+            n_folds=args.n_folds
         )
 
         """
