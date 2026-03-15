@@ -76,18 +76,17 @@ def get_class_weights(y_train):
     n_mitterrand = sum(1 for y in y_train if y == 1)
     w_chirac     = n_total / (2 * n_chirac)
     w_mitterrand = n_total / (2 * n_mitterrand)
-    print(f"Class weights → Chirac: {w_chirac:.3f} | Mitterrand: {w_mitterrand:.3f}")
+    print(f"Class weights to Chirac: {w_chirac:.3f} | Mitterrand: {w_mitterrand:.3f}")
     return torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
 
 
 def train_one(X_train, y_train, X_val, y_val,
               tokenizer, output_dir, epochs, batch_size, lr, augment, strategy):
-              #                                                         ↑ add strategy
 
     model = CamembertForSequenceClassification.from_pretrained(
         "camembert-base", num_labels=2
     )
-    model = freeze_strategy(model, strategy=strategy)  # ← was args.strategy (NameError!)
+    model = freeze_strategy(model, strategy=strategy) 
 
     if augment:
         X_train, y_train = augment_mitterrand(X_train, y_train, multiplier=3)
@@ -134,7 +133,7 @@ def train_one(X_train, y_train, X_val, y_val,
 def train(args):
     alltxts, alllabs, alldocids = load_pres(args.fname)
 
-    # ── Add context BEFORE any split (preserves real speech order) ──
+    # Add context BEFORE any split or data augmentation (preserves real speech order)
     if args.context:
         print("Adding sentence context (window=1)...")
         alltxts = add_context(alltxts, alldocids, window=2)
@@ -178,13 +177,13 @@ def train(args):
             ap  = average_precision_score(y_val, probs, pos_label=1)
             fold_scores.append({"f1": f1, "auc": auc, "ap": ap})
 
-            print(f"Fold {fold+1} → F1: {f1:.4f} | AUC: {auc:.4f} | AP: {ap:.4f}")
+            print(f"Fold {fold+1} -> F1: {f1:.4f} | AUC: {auc:.4f} | AP: {ap:.4f}")
 
             # Save fold model
             fold_best = f"{fold_dir}/best_model"
             trainer.save_model(fold_best)
             tokenizer.save_pretrained(fold_best)
-            print(f"Fold {fold+1} model saved → {fold_best}")
+            print(f"Fold {fold+1} model saved -> {fold_best}")
 
         # Print k-fold summary
         print(f"\n{'='*50}")
@@ -197,7 +196,7 @@ def train(args):
         print(f"\nBest fold by AP: fold {np.argmax([s['ap'] for s in fold_scores])+1}")
         print(f"Use that fold's checkpoint for submission, or retrain on full data.")
 
-    # ── Standard single split mode ──
+    # Standard single split mode
     else:
         print(f"\n{'='*50}")
         print(f"Standard Train/Val Split")
@@ -208,13 +207,13 @@ def train(args):
         trainer = train_one(
             X_train, y_train, X_val, y_val,
             tokenizer, args.output_dir,
-            args.epochs, args.batch_size, args.lr, args.augment, args.strategy  # ← add
+            args.epochs, args.batch_size, args.lr, args.augment, args.strategy
         )
 
         best_path = f"{args.output_dir}/best_model"
         trainer.save_model(best_path)
         tokenizer.save_pretrained(best_path)
-        print(f"\nBest model saved → {best_path}")
+        print(f"\nBest model saved -> {best_path}")
 
 
 if __name__ == "__main__":

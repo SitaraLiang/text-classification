@@ -73,7 +73,7 @@ def kfold_splits(alltxts, alllabs, n_splits=5, random_state=42):
 
     Usage:
         for fold, (X_train, X_val, y_train, y_val) in enumerate(kfold_splits(alltxts, alllabs)):
-            ...
+
     """
     import numpy as np
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
@@ -92,7 +92,6 @@ def kfold_splits(alltxts, alllabs, n_splits=5, random_state=42):
         print(f"  Val   Mitterrand: {sum(y_val)}   ({100*sum(y_val)/len(y_val):.1f}%)")
 
         yield fold, X_train, X_val, y_train, y_val
-
 
 
 
@@ -126,11 +125,11 @@ def augment_mitterrand(X_train, y_train, multiplier=3, random_state=42):
 
         for i in range(multiplier):
             if i == 0:
-                # Copy 1: simple duplication
+                # simple duplication
                 aug = text
 
             elif i == 1:
-                # Copy 2: random word deletion (~10% of words dropped)
+                # random word deletion (~10% of words dropped)
                 aug_words = [w for w in words if random.random() > 0.1]
                 aug = " ".join(aug_words) if aug_words else text
 

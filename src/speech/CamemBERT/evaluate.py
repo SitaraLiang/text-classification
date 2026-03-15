@@ -20,7 +20,7 @@ def load_checkpoint(checkpoint_path):
 
 def predict_probs(model, tokenizer, texts, temperature=1.0, batch_size=32):
     """
-    Returns P(Mitterrand) for each sentence.
+    Returns P(Chirac) for each sentence.
     temperature > 1.0 spreads out overconfident probabilities.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -39,8 +39,8 @@ def predict_probs(model, tokenizer, texts, temperature=1.0, batch_size=32):
 
         with torch.no_grad():
             logits = model(**inputs).logits
-            logits = logits / temperature          # ← temperature scaling
-            probs  = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()  # P(Mitterrand)
+            logits = logits / temperature 
+            probs  = torch.softmax(logits, dim=0)[:, 1].cpu().numpy()  # P(Chirac)
 
         all_probs.extend(probs)
 
@@ -102,7 +102,7 @@ def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5,
 
     print(f"\nRunning inference (temperature={temperature})...")
     probs = predict_probs(model, tokenizer, X_val, temperature=temperature)
-    preds = (probs >= 0.5).astype(int)
+    preds = (probs > 0.5).astype(int)
 
     f1  = f1_score(y_val, preds, pos_label=1, zero_division=0)
     auc = roc_auc_score(y_val, probs)
@@ -181,14 +181,14 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
         print("Adding sentence context (window=2)...")
         test_texts = add_context(test_texts, test_docids, window=2)
 
-    # Collect P(Mitterrand) from each fold
+    # Collect P(Chirac) from each fold
     all_probs = []
     for i, checkpoint_path in enumerate(fold_checkpoints):
         print(f"\nFold {i+1}/{len(fold_checkpoints)}: loading...")
         tokenizer, model = load_checkpoint(checkpoint_path)
         probs = predict_probs(model, tokenizer, test_texts, temperature=temperature)
         all_probs.append(probs)
-        print(f"  Mitterrand (p>0.5): {sum(probs > 0.5)}")
+        print(f"  Chirac (p>0.5): {sum(probs > 0.5)}")
 
     ensemble_m = np.mean(all_probs, axis=0)
 
