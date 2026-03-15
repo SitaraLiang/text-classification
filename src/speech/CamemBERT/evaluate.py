@@ -148,16 +148,16 @@ def generate_submission(checkpoint_path, test_fname, output_path,
 
     print(f"Running inference (temperature={temperature})...")
     probs_m = predict_probs(model, tokenizer, test_texts, temperature=temperature)
-    probs_c = 1 - probs_m     # ← P(Chirac) for submission
+    
 
     with open(output_path, 'w') as f:
-        for p in probs_c:
+        for p in probs_m:
             f.write(f"{p:.6f}\n")
 
-    print(f"\nSubmission saved → {output_path} ({len(probs_c)} lines)")
-    print(f"  Chirac     (p>0.5): {sum(probs_c > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(probs_c < 0.5)}")
-    return probs_c
+    print(f"\nSubmission saved to {output_path} ({len(probs_m)} lines)")
+    print(f"  Chirac     (p>0.5): {sum(probs_m > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(probs_m < 0.5)}")
+    return probs_m
 
 
 def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
@@ -190,22 +190,20 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
         all_probs.append(probs)
         print(f"  Mitterrand (p>0.5): {sum(probs > 0.5)}")
 
-    # Average P(Mitterrand) across folds, then flip to P(Chirac)
     ensemble_m = np.mean(all_probs, axis=0)
-    ensemble_c = 1 - ensemble_m    # P(Chirac) for submission
 
     print(f"\n{'─'*40}")
     print(f"  Ensemble of {len(fold_checkpoints)} folds (T={temperature})")
-    print(f"  Chirac     (p>0.5): {sum(ensemble_c > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(ensemble_c < 0.5)}")
+    print(f"  Chirac     (p>0.5): {sum(ensemble_m > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(ensemble_m < 0.5)}")
     print(f"{'─'*40}")
 
     with open(output_path, 'w') as f:
-        for p in ensemble_c:
+        for p in ensemble_m:
             f.write(f"{p:.6f}\n")
 
-    print(f"Ensemble submission saved → {output_path} ({len(ensemble_c)} lines)")
-    return ensemble_c
+    print(f"Ensemble submission saved to {output_path} ({len(ensemble_m)} lines)")
+    return ensemble_m
 
 
 if __name__ == "__main__":
