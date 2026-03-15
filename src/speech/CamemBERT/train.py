@@ -1,21 +1,3 @@
-"""
-train.py
-========
-Trains CamemBERT for speaker classification (Chirac / Mitterrand).
-Supports standard train/val split and k-fold cross-validation.
-Includes data augmentation for Mitterrand (minority class).
-
-Usage:
-    # Standard training
-    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full
-
-    # With augmentation
-    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full --augment
-
-    # K-fold cross-validation (finds best hyperparams, then trains final model)
-    python train.py --fname ../../data/corpus.tache1.learn.utf8 --strategy full --kfold 5 --augment
-"""
-
 import argparse
 import numpy as np
 import torch

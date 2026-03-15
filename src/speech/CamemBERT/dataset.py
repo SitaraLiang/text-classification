@@ -1,13 +1,3 @@
-"""
-dataset.py
-==========
-Handles data loading, preprocessing, PyTorch Dataset creation,
-data augmentation, and k-fold splitting.
-
-Usage:
-    from dataset import load_pres, split_data, augment_mitterrand, SpeechDataset
-"""
-
 import codecs
 import re
 import random
@@ -16,9 +6,6 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split, StratifiedKFold
 
 
-# ─────────────────────────────────────────
-# 1. Load data
-# ─────────────────────────────────────────
 def load_pres(fname):
     """
     Load and parse the presidential speech corpus.
@@ -43,9 +30,6 @@ def load_pres(fname):
     return alltxts, alllabs, alldocids
 
 
-# ─────────────────────────────────────────
-# 2. Standard train/val split
-# ─────────────────────────────────────────
 def split_data(alltxts, alllabs, alldocids=None, test_size=0.2, random_state=42):
     """
     Stratified train/val split preserving 87/13 class ratio.
@@ -76,9 +60,6 @@ def split_data(alltxts, alllabs, alldocids=None, test_size=0.2, random_state=42)
     return X_train, X_val, y_train, y_val
 
 
-# ─────────────────────────────────────────
-# 3. K-Fold split generator
-# ─────────────────────────────────────────
 def kfold_splits(alltxts, alllabs, n_splits=5, random_state=42):
     """
     Yields (X_train, X_val, y_train, y_val) for each fold.
@@ -114,9 +95,7 @@ def kfold_splits(alltxts, alllabs, n_splits=5, random_state=42):
 
 
 
-# ─────────────────────────────────────────
-# 4. Data augmentation for Mitterrand (minority class)
-# ─────────────────────────────────────────
+
 def augment_mitterrand(X_train, y_train, multiplier=3, random_state=42):
     """
     Augments Mitterrand sentences in training set by:
@@ -199,9 +178,7 @@ def add_context(texts, doc_ids, window=2, sep_token="</s>"):
 
     return contextualized
 
-# ─────────────────────────────────────────
-# 5. PyTorch Dataset
-# ─────────────────────────────────────────
+
 class SpeechDataset(Dataset):
     """
     PyTorch Dataset for tokenized presidential speeches.

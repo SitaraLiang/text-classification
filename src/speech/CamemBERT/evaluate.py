@@ -1,22 +1,3 @@
-"""
-evaluate.py
-===========
-Loads a saved checkpoint and evaluates on validation set, or generates
-submission probabilities for the test set.
-
-IMPORTANT: Always pass --context if the model was trained with --context.
-
-Usage:
-    # Evaluate fold 3 on fold 3 val set
-    python evaluate.py --ckpt_dir ./checkpoints_kfold --fname ./data/corpus.tache1.learn.utf8 --context --fold 3
-
-    # Generate ensemble submission
-    python evaluate.py --ckpt_dir ./checkpoints_kfold --test_fname ./data/test.utf8 --submission submission-pres-1.csv --context --ensemble
-
-    # Find best temperature on val set
-    python evaluate.py --ckpt_dir ./checkpoints_kfold --fname ./data/corpus.tache1.learn.utf8 --context --fold 3 --find_temp
-"""
-
 import argparse
 import re
 import numpy as np
@@ -29,10 +10,6 @@ from sklearn.metrics import (
 
 from dataset import load_pres, split_data, add_context
 
-
-# ─────────────────────────────────────────
-# Load checkpoint
-# ─────────────────────────────────────────
 def load_checkpoint(checkpoint_path):
     print(f"Loading checkpoint from: {checkpoint_path}")
     tokenizer = CamembertTokenizer.from_pretrained(checkpoint_path)
@@ -41,10 +18,6 @@ def load_checkpoint(checkpoint_path):
     print("Checkpoint loaded.")
     return tokenizer, model
 
-
-# ─────────────────────────────────────────
-# Predict probabilities — always returns P(Mitterrand) internally
-# ─────────────────────────────────────────
 def predict_probs(model, tokenizer, texts, temperature=1.0, batch_size=32):
     """
     Returns P(Mitterrand) for each sentence.
@@ -77,9 +50,6 @@ def predict_probs(model, tokenizer, texts, temperature=1.0, batch_size=32):
     return np.array(all_probs)
 
 
-# ─────────────────────────────────────────
-# Find best temperature on validation set
-# ─────────────────────────────────────────
 def find_temperature(model, tokenizer, X_val, y_val):
     """
     Tries different temperatures and prints metrics.
@@ -106,10 +76,6 @@ def find_temperature(model, tokenizer, X_val, y_val):
     print(f"\n  Best temperature by AP: T={best_t} → AP={best_ap:.4f}")
     return best_t
 
-
-# ─────────────────────────────────────────
-# Evaluate on validation set
-# ─────────────────────────────────────────
 def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5,
              temperature=1.0, find_temp=False):
     tokenizer, model = load_checkpoint(checkpoint_path)
@@ -157,9 +123,6 @@ def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5,
     return probs, y_val, X_val, temperature
 
 
-# ─────────────────────────────────────────
-# Generate submission — single checkpoint
-# ─────────────────────────────────────────
 def generate_submission(checkpoint_path, test_fname, output_path,
                         use_context=False, temperature=1.0):
     tokenizer, model = load_checkpoint(checkpoint_path)
@@ -197,9 +160,6 @@ def generate_submission(checkpoint_path, test_fname, output_path,
     return probs_c
 
 
-# ─────────────────────────────────────────
-# Generate submission — ensemble
-# ─────────────────────────────────────────
 def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
                                  use_context=False, temperature=1.0):
     test_texts, test_docids = [], []
@@ -232,7 +192,7 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
 
     # Average P(Mitterrand) across folds, then flip to P(Chirac)
     ensemble_m = np.mean(all_probs, axis=0)
-    ensemble_c = 1 - ensemble_m    # ← P(Chirac) for submission
+    ensemble_c = 1 - ensemble_m    # P(Chirac) for submission
 
     print(f"\n{'─'*40}")
     print(f"  Ensemble of {len(fold_checkpoints)} folds (T={temperature})")
@@ -248,9 +208,6 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
     return ensemble_c
 
 
-# ─────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate CamemBERT speaker classifier")
     parser.add_argument("--checkpoint", type=str, default=None,                       help="Path to single checkpoint (for non-ensemble)")
