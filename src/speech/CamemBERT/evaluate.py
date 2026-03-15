@@ -40,7 +40,7 @@ def predict_probs(model, tokenizer, texts, temperature=1.0, batch_size=32):
         with torch.no_grad():
             logits = model(**inputs).logits
             logits = logits / temperature 
-            probs  = torch.softmax(logits, dim=0)[:, 1].cpu().numpy()  # P(Chirac)
+            probs  = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()  # P(Chirac)
 
         all_probs.extend(probs)
 
@@ -148,6 +148,7 @@ def generate_submission(checkpoint_path, test_fname, output_path,
 
     print(f"Running inference (temperature={temperature})...")
     probs_m = predict_probs(model, tokenizer, test_texts, temperature=temperature)
+    pro
     
 
     with open(output_path, 'w') as f:
