@@ -68,12 +68,12 @@ def find_temperature(model, tokenizer, X_val, y_val):
         auc = roc_auc_score(y_val, probs)
         ap  = average_precision_score(y_val, probs, pos_label=1)
         f1  = f1_score(y_val, preds, pos_label=1, zero_division=0)
-        print(f"  {T:>6.1f} | {probs.min():>6.3f} | {probs.max():>6.3f} | "
-              f"{probs.std():>6.3f} | {auc:>6.4f} | {ap:>6.4f} | {f1:>6.4f}")
+        print(f"  {T:.16f} | {probs.min()::.16f} | {probs.max():.16f} | "
+              f"{probs.std():.16f} | {auc:.16f} | {ap:.16f} | {f1:.16f}")
         if ap > best_ap:
             best_ap, best_t = ap, T
 
-    print(f"\n  Best temperature by AP: T={best_t} → AP={best_ap:.4f}")
+    print(f"\n  Best temperature by AP: T={best_t} → AP={best_ap:.16f}")
     return best_t
 
 def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5,
@@ -148,12 +148,11 @@ def generate_submission(checkpoint_path, test_fname, output_path,
 
     print(f"Running inference (temperature={temperature})...")
     probs_m = predict_probs(model, tokenizer, test_texts, temperature=temperature)
-    pro
     
 
     with open(output_path, 'w') as f:
         for p in probs_m:
-            f.write(f"{p:.6f}\n")
+            f.write(f"{p:.16f}\n")
 
     print(f"\nSubmission saved to {output_path} ({len(probs_m)} lines)")
     print(f"  Chirac     (p>0.5): {sum(probs_m > 0.5)}")
@@ -201,7 +200,7 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
 
     with open(output_path, 'w') as f:
         for p in ensemble_m:
-            f.write(f"{p:.6f}\n")
+            f.write(f"{p:.16f}\n")
 
     print(f"Ensemble submission saved to {output_path} ({len(ensemble_m)} lines)")
     return ensemble_m

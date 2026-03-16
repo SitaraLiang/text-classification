@@ -106,7 +106,7 @@ def train_one(X_train, y_train, X_val, y_val,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size * 2,
-        warmup_steps=warmup_steps,             # ← replaces warmup_ratio
+        warmup_steps=warmup_steps,
         learning_rate=lr,
         weight_decay=0.01,
         eval_strategy="epoch",
