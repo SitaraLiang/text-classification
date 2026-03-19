@@ -8,7 +8,7 @@ from sklearn.metrics import (
     f1_score, roc_auc_score, average_precision_score, classification_report
 )
 
-from speech.dataset import load_pres, split_data, add_context
+from dataset import load_pres, split_data, add_context
 
 def load_checkpoint(checkpoint_path):
     print(f"Loading checkpoint from: {checkpoint_path}")
