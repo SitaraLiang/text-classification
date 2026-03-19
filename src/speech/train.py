@@ -10,7 +10,7 @@ from transformers import (
 )
 from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
 
-from dataset import load_pres, split_data, kfold_splits, augment_mitterrand, add_context, SpeechDataset
+from speech.dataset import load_pres, split_data, kfold_splits, augment_mitterrand, add_context, SpeechDataset
 
 
 class WeightedTrainer(Trainer):

@@ -8,7 +8,7 @@ from sklearn.metrics import (
     f1_score, roc_auc_score, average_precision_score, classification_report
 )
 
-from dataset import load_pres, split_data, add_context
+from speech.dataset import load_pres, split_data, add_context
 
 def load_checkpoint(checkpoint_path):
     print(f"Loading checkpoint from: {checkpoint_path}")
@@ -122,6 +122,72 @@ def evaluate(checkpoint_path, fname, use_context=False, fold=None, n_folds=5,
 
     return probs, y_val, X_val, temperature
 
+def viterbi_smooth(probs, doc_ids,
+                   p_mm=0.947,  # P(Mitterrand|Mitterrand)
+                   p_cc=0.992,  # P(Chirac|Chirac)
+                   p_prior_m=0.13):
+    """
+    Apply Viterbi decoding within each document separately.
+    probs_m : P(Chirac) from CamemBERT for each sentence
+    doc_ids : document ID for each sentence (to respect boundaries)
+    """
+    p_prior_c = 1 - p_prior_m
+    
+    # Transition matrix T[from][to]
+    T = np.array([[p_cc,     1-p_cc],   # from Chirac
+                  [1-p_mm,   p_mm  ]])  # from Mitterrand
+
+    smoothed = np.zeros(len(probs))
+    
+    # Group by document to respect boundaries
+    from itertools import groupby
+    from operator import itemgetter
+    
+    # Get unique doc segments with indices
+    doc_segments = []
+    for doc_id, group in groupby(enumerate(doc_ids), key=lambda x: x[1]):
+        indices = [i for i, _ in group]
+        doc_segments.append(indices)
+    
+    for indices in doc_segments:
+        n = len(indices)
+        probs = probs[indices]  # P(Mitterrand) for this doc
+        
+        # Emission probabilities
+        # emit[t][s] = P(observation at t | state s)
+        emit = np.array([[1-p, p] for p in probs])  # shape (n, 2)
+        
+        # Viterbi
+        viterbi = np.zeros((n, 2))
+        backptr = np.zeros((n, 2), dtype=int)
+        
+        # Initialization
+        viterbi[0] = [p_prior_c * emit[0][0],
+                      p_prior_m * emit[0][1]]
+        viterbi[0] /= viterbi[0].sum()  # normalize
+        
+        # Forward pass
+        for t in range(1, n):
+            for s in range(2):
+                scores = viterbi[t-1] * T[:, s] * emit[t][s]
+                backptr[t][s] = np.argmax(scores)
+                viterbi[t][s] = np.max(scores)
+            viterbi[t] /= viterbi[t].sum()  # normalize
+        
+        # Backtrack
+        states = np.zeros(n, dtype=int)
+        states[-1] = np.argmax(viterbi[-1])
+        for t in range(n-2, -1, -1):
+            states[t] = backptr[t+1][states[t+1]]
+        
+        for i, idx in enumerate(indices):
+            if states[i] == 0:  # Chirac
+                smoothed[idx] = 0.5 + (probs[idx] * 0.5)   # push above 0.5
+            else:               # Mitterrand
+                smoothed[idx] = 0.5 - ((1-probs[idx]) * 0.5)  # push below 0.5
+                    
+    return smoothed
+
 
 def generate_submission(checkpoint_path, test_fname, output_path,
                         use_context=False, temperature=1.0):
@@ -147,17 +213,18 @@ def generate_submission(checkpoint_path, test_fname, output_path,
         test_texts = add_context(test_texts, test_docids, window=2)
 
     print(f"Running inference (temperature={temperature})...")
-    probs_m = predict_probs(model, tokenizer, test_texts, temperature=temperature)
+    probs = predict_probs(model, tokenizer, test_texts, temperature=temperature)
+    smoothed_probs = viterbi_smooth(probs, test_docids)
     
 
     with open(output_path, 'w') as f:
-        for p in probs_m:
+        for p in smoothed_probs:
             f.write(f"{p:.16f}\n")
 
-    print(f"\nSubmission saved to {output_path} ({len(probs_m)} lines)")
-    print(f"  Chirac     (p>0.5): {sum(probs_m > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(probs_m < 0.5)}")
-    return probs_m
+    print(f"\nSubmission saved to {output_path} ({len(smoothed_probs)} lines)")
+    print(f"  Chirac     (p>0.5): {sum(smoothed_probs > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(smoothed_probs < 0.5)}")
+    return smoothed_probs
 
 
 def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
@@ -190,20 +257,21 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
         all_probs.append(probs)
         print(f"  Chirac (p>0.5): {sum(probs > 0.5)}")
 
-    ensemble_m = np.mean(all_probs, axis=0)
+    ensemble = np.mean(all_probs, axis=0)
+    smoothed_probs = viterbi_smooth(ensemble, test_docids)
 
     print(f"\n{'─'*40}")
     print(f"  Ensemble of {len(fold_checkpoints)} folds (T={temperature})")
-    print(f"  Chirac     (p>0.5): {sum(ensemble_m > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(ensemble_m < 0.5)}")
+    print(f"  Chirac     (p>0.5): {sum(smoothed_probs > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(smoothed_probs < 0.5)}")
     print(f"{'─'*40}")
 
     with open(output_path, 'w') as f:
-        for p in ensemble_m:
+        for p in smoothed_probs:
             f.write(f"{p:.16f}\n")
 
-    print(f"Ensemble submission saved to {output_path} ({len(ensemble_m)} lines)")
-    return ensemble_m
+    print(f"Ensemble submission saved to {output_path} ({len(smoothed_probs)} lines)")
+    return smoothed_probs
 
 
 if __name__ == "__main__":
