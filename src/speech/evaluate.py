@@ -128,64 +128,65 @@ def viterbi_smooth(probs, doc_ids,
                    p_prior_m=0.13):
     """
     Apply Viterbi decoding within each document separately.
-    probs_m : P(Chirac) from CamemBERT for each sentence
+    probs   : P(Chirac) from CamemBERT for each sentence
     doc_ids : document ID for each sentence (to respect boundaries)
     """
+    probs   = np.array(probs)    # ← ensure numpy array
+    doc_ids = list(doc_ids)      # ← ensure list
+
     p_prior_c = 1 - p_prior_m
     
     # Transition matrix T[from][to]
-    T = np.array([[p_cc,     1-p_cc],   # from Chirac
-                  [1-p_mm,   p_mm  ]])  # from Mitterrand
+    T = np.array([[p_cc,   1-p_cc],   # from Chirac
+                  [1-p_mm, p_mm  ]])  # from Mitterrand
 
     smoothed = np.zeros(len(probs))
     
-    # Group by document to respect boundaries
     from itertools import groupby
-    from operator import itemgetter
     
-    # Get unique doc segments with indices
     doc_segments = []
     for doc_id, group in groupby(enumerate(doc_ids), key=lambda x: x[1]):
         indices = [i for i, _ in group]
         doc_segments.append(indices)
     
     for indices in doc_segments:
-        n = len(indices)
-        probs = probs[indices]  # P(Mitterrand) for this doc
+        n          = len(indices)
+        probs_doc  = probs[indices]  # P(Chirac) for this doc ← renamed to avoid shadowing
         
-        # Emission probabilities
-        # emit[t][s] = P(observation at t | state s)
-        emit = np.array([[1-p, p] for p in probs])  # shape (n, 2)
+        # emit[t][0] = P(obs|Chirac)     = probs_c[t]
+        # emit[t][1] = P(obs|Mitterrand) = 1 - probs_c[t]
+        emit = np.array([[p, 1-p] for p in probs_doc])  # shape (n, 2)
         
         # Viterbi
         viterbi = np.zeros((n, 2))
-        backptr = np.zeros((n, 2), dtype=int)
+        backptr  = np.zeros((n, 2), dtype=int)
         
         # Initialization
         viterbi[0] = [p_prior_c * emit[0][0],
                       p_prior_m * emit[0][1]]
-        viterbi[0] /= viterbi[0].sum()  # normalize
+        viterbi[0] /= viterbi[0].sum()
         
         # Forward pass
         for t in range(1, n):
             for s in range(2):
-                scores = viterbi[t-1] * T[:, s] * emit[t][s]
+                scores       = viterbi[t-1] * T[:, s] * emit[t][s]
                 backptr[t][s] = np.argmax(scores)
                 viterbi[t][s] = np.max(scores)
-            viterbi[t] /= viterbi[t].sum()  # normalize
+            viterbi[t] /= viterbi[t].sum()
         
         # Backtrack
-        states = np.zeros(n, dtype=int)
-        states[-1] = np.argmax(viterbi[-1])
+        states      = np.zeros(n, dtype=int)
+        states[-1]  = np.argmax(viterbi[-1])
         for t in range(n-2, -1, -1):
             states[t] = backptr[t+1][states[t+1]]
         
+        # Blend Viterbi state with CamemBERT probabilities
         for i, idx in enumerate(indices):
-            if states[i] == 0:  # Chirac
-                smoothed[idx] = 0.5 + (probs[idx] * 0.5)   # push above 0.5
-            else:               # Mitterrand
-                smoothed[idx] = 0.5 - ((1-probs[idx]) * 0.5)  # push below 0.5
-                    
+            if states[i] == 0:  # Chirac → push above 0.5
+                smoothed[idx] = 0.5 + (probs_doc[i] * 0.5)
+            else:               # Mitterrand → push below 0.5
+                smoothed[idx] = 0.5 - ((1 - probs_doc[i]) * 0.5)
+    
     return smoothed
 
 
