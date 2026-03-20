@@ -182,10 +182,10 @@ def viterbi_smooth(probs, doc_ids,
         
         # Blend Viterbi state with CamemBERT probabilities
         for i, idx in enumerate(indices):
-            if states[i] == 0:  # Chirac → push above 0.5
-                smoothed[idx] = 0.5 + (probs_doc[i] * 0.5)
-            else:               # Mitterrand → push below 0.5
-                smoothed[idx] = 0.5 - ((1 - probs_doc[i]) * 0.5)
+            if states[i] == 0:  # Chirac
+                smoothed[idx] = 1.0
+            else:               # Mitterrand
+                smoothed[idx] = 0.0
     
     return smoothed
 
@@ -215,15 +215,17 @@ def generate_submission(checkpoint_path, test_fname, output_path,
 
     print(f"Running inference (temperature={temperature})...")
     probs = predict_probs(model, tokenizer, test_texts, temperature=temperature)
+    smoothed_probs = viterbi_smooth(probs, test_docids)
+    
 
     with open(output_path, 'w') as f:
-        for p in probs:
+        for p in smoothed_probs:
             f.write(f"{p:.16f}\n")
 
-    print(f"\nSubmission saved to {output_path} ({len(probs)} lines)")
-    print(f"  Chirac     (p>0.5): {sum(probs > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(probs < 0.5)}")
-    return probs
+    print(f"\nSubmission saved to {output_path} ({len(smoothed_probs)} lines)")
+    print(f"  Chirac     (p>0.5): {sum(smoothed_probs > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(smoothed_probs < 0.5)}")
+    return smoothed_probs
 
 
 def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
@@ -257,19 +259,20 @@ def generate_submission_ensemble(fold_checkpoints, test_fname, output_path,
         print(f"  Chirac (p>0.5): {sum(probs > 0.5)}")
 
     ensemble = np.mean(all_probs, axis=0)
+    smoothed_probs = viterbi_smooth(ensemble, test_docids)
 
     print(f"\n{'─'*40}")
     print(f"  Ensemble of {len(fold_checkpoints)} folds (T={temperature})")
-    print(f"  Chirac     (p>0.5): {sum(ensemble > 0.5)}")
-    print(f"  Mitterrand (p<0.5): {sum(ensemble < 0.5)}")
+    print(f"  Chirac     (p>0.5): {sum(smoothed_probs > 0.5)}")
+    print(f"  Mitterrand (p<0.5): {sum(smoothed_probs < 0.5)}")
     print(f"{'─'*40}")
 
     with open(output_path, 'w') as f:
-        for p in ensemble:
+        for p in smoothed_probs:
             f.write(f"{p:.16f}\n")
 
-    print(f"Ensemble submission saved to {output_path} ({len(ensemble)} lines)")
-    return ensemble
+    print(f"Ensemble submission saved to {output_path} ({len(smoothed_probs)} lines)")
+    return smoothed_probs
 
 
 if __name__ == "__main__":
