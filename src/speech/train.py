@@ -75,7 +75,7 @@ def get_class_weights(y_train):
     n_chirac     = sum(1 for y in y_train if y == 0)
     n_mitterrand = sum(1 for y in y_train if y == 1)
     w_chirac     = n_total / (2 * n_chirac)
-    w_mitterrand = n_total / (2 * n_mitterrand)
+    w_mitterrand = 2 * (n_total / (2 * n_mitterrand))
     print(f"Class weights to Chirac: {w_chirac:.3f} | Mitterrand: {w_mitterrand:.3f}")
     return torch.tensor([w_chirac, w_mitterrand], dtype=torch.float)
 

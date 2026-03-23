@@ -95,7 +95,7 @@ def kfold_splits(alltxts, alllabs, n_splits=5, random_state=42):
 
 
 
-def augment_mitterrand(X_train, y_train, multiplier=3, random_state=42):
+def augment_mitterrand(X_train, y_train, multiplier=5, random_state=42):
     """
     Augments Mitterrand sentences in training set by:
       1. Simple duplication (always applied)
