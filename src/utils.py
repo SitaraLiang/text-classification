@@ -13,6 +13,8 @@ from nltk.stem.snowball import FrenchStemmer
 from nltk.corpus import stopwords
 #nltk.download('stopwords')
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
+
 
 # Chargement des données speech
 def load_pres(fname):
@@ -26,10 +28,10 @@ def load_pres(fname):
         #
         lab = re.sub(r"<[0-9]*:[0-9]*:(.)>.*","\\1",txt)
         txt = re.sub(r"<[0-9]*:[0-9]*:.>(.*)","\\1",txt)
-        if lab.count('M') >0: # if a letter 'M' is present in the label (e.g., <100:12:M>), then we group the sentence to class -1
-            alllabs.append(-1)
+        if lab.count('M') >0: # if a letter 'M' is present in the label (e.g., <100:12:M>), then we group the sentence to class 1
+            alllabs.append(1)
         else:
-            alllabs.append(1) # else we group to class +1
+            alllabs.append(0) # else we group to class 0
         alltxts.append(txt)
     return alltxts,alllabs
 
@@ -134,49 +136,70 @@ def remove_accents(text):
     return unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode('utf-8')
 
 
-def find_uninformative_words(alltxts, alllabs, threshold=0.8):
-    """Find words that appear equally in both classes (not discriminative)"""
-    
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    
-    # Separate by class
+def find_uninformative_words(alltxts, alllabs, threshold=0.85, global_max_freq=0.01):
+    """
+    Finds words that are either:
+    1. Too balanced between classes (uninformative for classification)
+    2. Too frequent globally (likely functional "glue" words like 'plus', 'tout')
+    """
+    import numpy as np
+    from sklearn.feature_extraction.text import CountVectorizer
+
+    # 1. Separate classes
     class_1_docs = [txt for txt, lab in zip(alltxts, alllabs) if lab == 1]
-    class_2_docs = [txt for txt, lab in zip(alltxts, alllabs) if lab == -1]
+    class_0_docs = [txt for txt, lab in zip(alltxts, alllabs) if lab == 0]
     
-    # Get word frequencies for each class
-    vectorizer = CountVectorizer(lowercase=True, strip_accents='unicode')
+    # 2. Efficient frequency helper
+    def get_freqs_dict(docs):
+        vec = CountVectorizer(lowercase=True, strip_accents='unicode')
+        X = vec.fit_transform(docs)
+        counts = np.asarray(X.sum(axis=0)).flatten()
+        return {word: count / len(docs) for word, count in zip(vec.get_feature_names_out(), counts)}
+
+    freqs1 = get_freqs_dict(class_1_docs)
+    freqs0 = get_freqs_dict(class_0_docs)
     
-    X1 = vectorizer.fit_transform(class_1_docs)
-    vocab1 = vectorizer.get_feature_names_out()
-    freq1 = np.asarray(X1.sum(axis=0)).flatten()
-    
-    X2 = vectorizer.fit_transform(class_2_docs)
-    vocab2 = vectorizer.get_feature_names_out()
-    freq2 = np.asarray(X2.sum(axis=0)).flatten()
-    
-    # Find words in both classes
-    common_words = set(vocab1) & set(vocab2)
-    
-    # Calculate ratio of frequencies (close to 1 = balanced = uninformative)
+    # 3. Global frequency check (The Zipf Pruner)
+    full_vec = CountVectorizer(lowercase=True, strip_accents='unicode')
+    X_full = full_vec.fit_transform(alltxts)
+    global_map = dict(zip(full_vec.get_feature_names_out(), 
+                          np.asarray(X_full.sum(axis=0)).flatten() / len(alltxts)))
+
+    common_words = set(freqs1.keys()) & set(freqs0.keys())
     uninformative = []
     
     for word in common_words:
-        idx1 = np.where(vocab1 == word)[0][0]
-        idx2 = np.where(vocab2 == word)[0][0]
+        f1 = freqs1[word]
+        f0 = freqs0[word]
+        ratio = min(f1, f0) / max(f1, f0)
         
-        f1 = freq1[idx1] / len(class_1_docs)
-        f2 = freq2[idx2] / len(class_2_docs)
-        
-        ratio = min(f1, f2) / max(f1, f2)  # Close to 1 = balanced
-        
-        if ratio > threshold:  # Appears similarly in both classes
-            uninformative.append((word, ratio, f1, f2))
-    
-    # Sort by how balanced they are
-    uninformative.sort(key=lambda x: x[1], reverse=True)
-    
-    print("Top uninformative words (appear equally in both classes):")
-    for word, ratio, f1, f2 in uninformative:
-        print(f"{word:20s}: ratio={ratio:.3f}, class1={f1:.4f}, class2={f2:.4f}")
-    
-    return [w[0] for w in uninformative]
+        # LOGIC: 
+        # Is it too balanced? (ratio > 0.85)
+        # OR is it a "Top 1%" heavy-lifter? (global_freq > 0.01)
+        if ratio > threshold or global_map.get(word, 0) > global_max_freq:
+            uninformative.append(word)
+            
+    print(f"Filtering {len(uninformative)} uninformative/heavy words...")
+    return uninformative
+
+
+def evaluate_model(name, model, X_test, y_test):
+    # 1. Get Hard Predictions for F1
+    preds = model.predict(X_test)
+    f1 = f1_score(y_test, preds)
+
+    # 2. Get Scores/Probs for AUC and AP
+    if hasattr(model, "predict_proba"):
+        # For NB and Logistic Regression
+        probs = model.predict_proba(X_test)[:, 1]
+    else:
+        # For LinearSVC (uses distance from hyperplane)
+        probs = model.decision_function(X_test)
+
+    auc = roc_auc_score(y_test, probs)
+    ap = average_precision_score(y_test, probs)
+
+    print(f"--- {name} ---")
+    print(f"F1-Score: {f1:.4f}")
+    print(f"ROC-AUC:  {auc:.4f}")
+    print(f"Avg Prec: {ap:.4f}\n")

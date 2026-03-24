@@ -12,7 +12,6 @@ from sklearn.metrics import f1_score, roc_auc_score, average_precision_score
 
 from dataset import load_pres, split_data, kfold_splits, augment_mitterrand, add_context, SpeechDataset
 
-
 class WeightedTrainer(Trainer):
     def __init__(self, class_weights, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -64,7 +64,7 @@ def find_temperature(model, tokenizer, X_val, y_val):
     best_ap, best_t = 0, 1.0
     for T in [1.0, 2.0, 3.0, 5.0, 8.0, 10.0, 15.0, 20.0]:
         probs = predict_probs(model, tokenizer, X_val, temperature=T)
-        preds = (probs >= 0.5).astype(int)
+        preds = (probs > 0.5).astype(int)
         auc = roc_auc_score(y_val, probs)
         ap  = average_precision_score(y_val, probs, pos_label=1)
         f1  = f1_score(y_val, preds, pos_label=1, zero_division=0)
