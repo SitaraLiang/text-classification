@@ -33,8 +33,8 @@ def load_movies_1(path2data):
 #https://www.kaggle.com/code/nadzmiagthomas/distilbert-fine-tuning
 #a bit outdated I think
 
-model_name = 'distilbert-base-uncased'
-#model_name = 'distilbert/distilroberta-base'
+#model_name = 'distilbert-base-uncased'
+model_name = 'distilbert/distilroberta-base'
 model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
