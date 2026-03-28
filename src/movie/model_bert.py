@@ -90,13 +90,8 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=16,
     eval_strategy="epoch",
     learning_rate=2e-5,
-    #eval_steps=10,
-    #logging_steps=10,
     save_strategy="epoch",
-    #save_steps=50,
-    #save_total_limit=1,
-    #report_to="none",
-    lr_scheduler_type="cosine",
+    lr_scheduler_type="linear",
     weight_decay=0.01,
     load_best_model_at_end=True
 )
